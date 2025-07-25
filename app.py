@@ -92,7 +92,7 @@ with st.form("recipe_form"):
         with col3:
             unit = st.selectbox(f"Unit {i+1}", ["g", "kg", "ml", "l", "oz", "lb"], key=f"unit_{i}")
         with col4:
-            price = st.number_input(f"Price/kg or l (₹) {i+1}", min_value=0.0, step=0.1, value=default_prices.get(name, 0), key=f"price_{i}")
+            price = st.number_input(f"Price/kg or l (₹) {i+1}", min_value=0.0, step=0.1, value=float(default_prices.get(name, 0)), key=f"price_{i}")
         ingredients.append({
             "Ingredient": name,
             "Quantity": qty,
