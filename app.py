@@ -4,7 +4,7 @@ from io import BytesIO
 import base64
 
 # -----------------------------
-# Feature 1: Pre-saved Ingredients with Prices
+# Pre-saved Ingredients with Prices
 # -----------------------------
 pre_saved_ingredients = pd.DataFrame({
     'Ingredient': ['Flour', 'Sugar', 'Milk', 'Butter'],
@@ -13,7 +13,7 @@ pre_saved_ingredients = pd.DataFrame({
 })
 
 # -----------------------------
-# Feature 2: Unit Conversion Dictionary
+# Unit Conversion Dictionary
 # -----------------------------
 unit_conversion = {
     ('gram', 'kg'): 0.001,
@@ -77,7 +77,9 @@ for i in range(num_ingredients):
         'Cost': cost
     })
 
-# Display DataFrame and Total
+# -----------------------------
+# Display Recipe Summary
+# -----------------------------
 df = pd.DataFrame(ingredients)
 df['Cost'] = df['Cost'].round(2)
 total_cost = df['Cost'].sum()
@@ -89,7 +91,7 @@ st.dataframe(df)
 st.write(f"### 🧾 Total Cost: ₹{total_cost:.2f}")
 
 # -----------------------------
-# Feature 3: Export to Excel
+# Export to Excel
 # -----------------------------
 output = BytesIO()
 with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
