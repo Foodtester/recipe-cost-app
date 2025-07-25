@@ -1,169 +1,142 @@
 import streamlit as st
 import pandas as pd
-import base64
 from io import BytesIO
+import datetime
 
-# ------------------ Custom CSS ------------------
-custom_css = """
-<style>
-html, body, [class*="css"]  {
-    font-family: 'Segoe UI', sans-serif;
-    background-color: #f7f7f7;
-    color: #333333;
-}
-h1, h2, h3, h4 {
-    color: #2c3e50;
-    font-weight: 600;
-    text-align: center;
-}
-.stForm {
-    background-color: #ffffff;
-    padding: 2rem;
-    border-radius: 12px;
-    box-shadow: 0 4px 12px rgba(0,0,0,0.05);
-    margin-bottom: 2rem;
-}
-.stDataFrame, .stTable {
-    background-color: #ffffff;
-    border-radius: 12px;
-    padding: 1rem;
-    box-shadow: 0 2px 8px rgba(0,0,0,0.03);
-}
-.stExpander {
-    border-radius: 8px !important;
-    border: 1px solid #dcdcdc !important;
-    background-color: #ffffff !important;
-    margin-top: 1rem;
-}
-button[kind="primary"] {
-    background-color: #4CAF50;
-    color: white;
-    font-weight: bold;
-    border-radius: 8px;
-    padding: 0.6rem 1.2rem;
-    margin-top: 1rem;
-}
-button[kind="primary"]:hover {
-    background-color: #45a049;
-}
-input, select {
-    border-radius: 6px !important;
-    border: 1px solid #cccccc !important;
-    padding: 0.5rem !important;
-}
-</style>
-"""
-st.markdown(custom_css, unsafe_allow_html=True)
+# Set page config
+st.set_page_config(page_title="Recipe Cost Calculator", layout="wide")
 
-# ------------------ Pre-saved Ingredients ------------------
+# Pre-saved ingredient prices (can be extended or replaced by user)
 default_prices = {
-    "Onion": 20,  # per kg
-    "Tomato": 30,
-    "Chicken": 200,
+    "Rice": 50,
+    "Wheat Flour": 45,
     "Milk": 60,
-    "Oil": 150,
-    "Salt": 10,
-    "Sugar": 40
+    "Sugar": 42,
+    "Salt": 20,
+    "Butter": 500,
+    "Oil": 120,
+    "Eggs": 6
 }
 
-unit_conversion = {
-    "g": 0.001, "kg": 1,
-    "ml": 0.001, "l": 1,
-    "oz": 0.02835, "lb": 0.4536
+units_conversion = {
+    "g": 0.001,  # 1 gram = 0.001 kg
+    "kg": 1,
+    "ml": 0.001, # 1 ml = 0.001 liter
+    "l": 1,
+    "unit": 1
 }
 
-# ------------------ App Title ------------------
-st.title("🍲 Recipe Cost Calculator")
+st.markdown("## 🍽️ Recipe Cost Calculator")
+st.markdown("Use this tool to create recipes, calculate ingredient costs, and export your recipe book!")
 
-# ------------------ Form ------------------
-with st.form("recipe_form"):
-    recipe_name = st.text_input("Enter recipe name:")
-    servings = st.number_input("How many people will eat this?", min_value=1, step=1)
-    num_ingredients = st.number_input("Number of ingredients:", min_value=1, max_value=30, step=1)
+st.markdown("---")
 
-    ingredients = []
+# --- Input Form ---
+with st.form("recipe_form", clear_on_submit=False):
+    st.subheader("📝 Recipe Details")
+
+    col1, col2 = st.columns(2)
+    with col1:
+        dish_name = st.text_input("Dish Name", "")
+    with col2:
+        servings = st.number_input("Number of People", min_value=1, step=1, value=1)
+
+    st.markdown("### 🧂 Ingredients")
+
+    num_ingredients = st.number_input("How many ingredients?", min_value=1, max_value=50, step=1, value=3)
+
+    ingredients_data = []
+
     for i in range(int(num_ingredients)):
         st.markdown(f"**Ingredient {i+1}**")
-        col1, col2, col3, col4 = st.columns(4)
-        with col1:
-            name = st.text_input(f"Name {i+1}", key=f"name_{i}")
-        with col2:
-            qty = st.number_input(f"Quantity {i+1}", min_value=0.0, step=0.1, key=f"qty_{i}")
-        with col3:
-            unit = st.selectbox(f"Unit {i+1}", ["g", "kg", "ml", "l", "oz", "lb"], key=f"unit_{i}")
-        with col4:
-            price = st.number_input(f"Price/kg or l (₹) {i+1}", min_value=0.0, step=0.1, value=float(default_prices.get(name, 0)), key=f"price_{i}")
-        ingredients.append({
-            "Ingredient": name,
-            "Quantity": qty,
-            "Unit": unit,
-            "PricePerKgOrL": price
+        cols = st.columns([2, 1, 1, 1, 1])
+        name = cols[0].text_input(f"Name", key=f"name_{i}")
+        qty = cols[1].number_input(f"Qty", min_value=0.0, step=0.1, key=f"qty_{i}")
+        unit = cols[2].selectbox("Unit", ["g", "kg", "ml", "l", "unit"], key=f"unit_{i}")
+        price = cols[3].number_input(f"Price/kg or l (₹)", min_value=0.0, step=0.1, value=float(default_prices.get(name, 0)), key=f"price_{i}")
+        
+        ingredients_data.append({
+            "name": name,
+            "quantity": qty,
+            "unit": unit,
+            "price_per_kg_l": price
         })
 
-    submitted = st.form_submit_button("Calculate")
+    submitted = st.form_submit_button("Calculate Recipe Cost 💰")
 
-# ------------------ Processing ------------------
+# --- Process and Display ---
 if submitted:
-    data = []
-    total_cost = 0
+    st.success(f"Cost breakdown for **{dish_name}** serving **{servings}** people:")
+    result_data = []
+    total_cost = 0.0
 
-    for item in ingredients:
-        name = item["Ingredient"]
-        qty = item["Quantity"]
-        unit = item["Unit"]
-        price = item["PricePerKgOrL"]
-
-        # Convert to kg or liters
-        qty_in_kg_or_l = qty * unit_conversion.get(unit, 1)
-        cost = qty_in_kg_or_l * price
+    for item in ingredients_data:
+        qty_kg_or_l = item['quantity'] * units_conversion.get(item['unit'], 1)
+        cost = qty_kg_or_l * item['price_per_kg_l']
         total_cost += cost
 
-        data.append({
-            "Ingredient": name,
-            "Quantity": qty,
-            "Unit": unit,
-            "Converted Qty (kg/l)": round(qty_in_kg_or_l, 3),
-            "Price per Kg/L (₹)": price,
+        result_data.append({
+            "Ingredient": item['name'],
+            "Quantity": item['quantity'],
+            "Unit": item['unit'],
+            "Price per kg/l": item['price_per_kg_l'],
             "Cost (₹)": round(cost, 2)
         })
 
-    df = pd.DataFrame(data)
-    df_total = pd.DataFrame({
-        "Total Cost (₹)": [round(total_cost, 2)],
-        "Cost Per Serving (₹)": [round(total_cost / servings, 2) if servings else 0]
-    })
-
-    st.success("✅ Calculation Complete!")
-    st.subheader("📋 Recipe Summary")
+    df = pd.DataFrame(result_data)
+    df.loc[len(df.index)] = ["", "", "", "Total", round(total_cost, 2)]
     st.dataframe(df, use_container_width=True)
-    st.subheader("💰 Total Cost")
-    st.table(df_total)
 
-    # Save to session state master list
-    if "all_recipes" not in st.session_state:
-        st.session_state["all_recipes"] = []
+    st.markdown(f"### 🧾 Total Cost: ₹{round(total_cost,2)}")
+    st.markdown(f"### 👤 Cost Per Person: ₹{round(total_cost / servings, 2)}")
 
-    st.session_state["all_recipes"].append({
-        "Recipe": recipe_name,
+    # Save recipe to session state
+    if "recipe_book" not in st.session_state:
+        st.session_state.recipe_book = []
+
+    st.session_state.recipe_book.append({
+        "Dish Name": dish_name,
         "Servings": servings,
-        "Ingredients": df,
-        "Summary": df_total
+        "Total Cost": round(total_cost, 2),
+        "Cost per Person": round(total_cost / servings, 2),
+        "Date": datetime.date.today().isoformat()
     })
 
-    # ------------------ Export Section ------------------
-    def download_excel(recipes):
+    # Download Excel
+    def to_excel(df):
         output = BytesIO()
-        with pd.ExcelWriter(output, engine="xlsxwriter") as writer:
-            for r in recipes:
-                sheet_name = r["Recipe"][:31] or "Sheet"
-                r["Ingredients"].to_excel(writer, sheet_name=sheet_name, index=False)
-                r["Summary"].to_excel(writer, sheet_name=sheet_name, index=False, startrow=len(r["Ingredients"]) + 2)
-        output.seek(0)
-        return output
+        with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
+            df.to_excel(writer, index=False, sheet_name='Recipe')
+            writer.save()
+        return output.getvalue()
 
-    if st.session_state["all_recipes"]:
-        st.subheader("📘 Download Recipe Book (Excel)")
-        excel_data = download_excel(st.session_state["all_recipes"])
-        b64 = base64.b64encode(excel_data.read()).decode()
-        href = f'<a href="data:application/octet-stream;base64,{b64}" download="recipe_book.xlsx">📥 Download Recipe Book</a>'
-        st.markdown(href, unsafe_allow_html=True)
+    excel_data = to_excel(df)
+    st.download_button(
+        label="📥 Download This Recipe as Excel",
+        data=excel_data,
+        file_name=f"{dish_name.replace(' ', '_')}_cost.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    )
+
+# --- Master Recipe Book ---
+if "recipe_book" in st.session_state and st.session_state.recipe_book:
+    st.markdown("---")
+    st.subheader("📚 Your Recipe Book")
+    book_df = pd.DataFrame(st.session_state.recipe_book)
+    st.dataframe(book_df, use_container_width=True)
+
+    # Download full recipe book
+    def to_excel_book(df):
+        output = BytesIO()
+        with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
+            df.to_excel(writer, index=False, sheet_name='RecipeBook')
+            writer.save()
+        return output.getvalue()
+
+    excel_book = to_excel_book(book_df)
+    st.download_button(
+        label="📕 Download Master Recipe Book",
+        data=excel_book,
+        file_name="recipe_book.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    )
