@@ -1,57 +1,104 @@
-import streamlit as st
 import pandas as pd
-import io
+import streamlit as st
+from io import BytesIO
+import base64
 
-# Page configuration
-st.set_page_config(page_title="Recipe Cost Calculator", layout="wide")
-st.title("🍽️ Recipe Cost Calculator (Editable)")
+# -----------------------------
+# Feature 1: Pre-saved Ingredients with Prices
+# -----------------------------
+pre_saved_ingredients = pd.DataFrame({
+    'Ingredient': ['Flour', 'Sugar', 'Milk', 'Butter'],
+    'Unit': ['kg', 'kg', 'litre', 'gram'],
+    'Price_per_unit': [40, 50, 60, 5]
+})
 
-# File uploader
-uploaded_file = st.file_uploader("📤 Upload your Excel file with recipe ingredients", type=["xlsx"])
+# -----------------------------
+# Feature 2: Unit Conversion Dictionary
+# -----------------------------
+unit_conversion = {
+    ('gram', 'kg'): 0.001,
+    ('kg', 'gram'): 1000,
+    ('ml', 'litre'): 0.001,
+    ('litre', 'ml'): 1000,
+    ('ounce', 'gram'): 28.35,
+    ('gram', 'ounce'): 1 / 28.35,
+}
 
-if uploaded_file is not None:
-    try:
-        # Read uploaded Excel file
-        df = pd.read_excel(uploaded_file)
+def convert_unit(value, from_unit, to_unit):
+    if from_unit == to_unit:
+        return value
+    return value * unit_conversion.get((from_unit, to_unit), 1)
 
-        st.success("✅ File uploaded successfully! You can now edit the values below.")
+# -----------------------------
+# Streamlit UI
+# -----------------------------
+st.title("🍽️ Recipe Cost Calculator")
 
-        # Editable table
-        st.subheader("✏️ Edit your recipe details below:")
-        edited_df = st.data_editor(df, num_rows="dynamic", use_container_width=True)
+dish_name = st.text_input("Enter Dish Name")
+num_people = st.number_input("Number of People", min_value=1, value=1)
 
-        # Calculate 'Total' column if the necessary columns exist
-        if "Quantity" in edited_df.columns and "Unit Price" in edited_df.columns:
-            edited_df["Total"] = edited_df["Quantity"] * edited_df["Unit Price"]
-        else:
-            st.warning("⚠️ Please ensure your file includes 'Quantity' and 'Unit Price' columns.")
+st.subheader("Add Ingredients")
+num_ingredients = st.number_input("How many ingredients?", min_value=1, value=3)
 
-        # Display the updated table
-        st.subheader("📊 Updated Table:")
-        st.dataframe(edited_df, use_container_width=True)
+ingredients = []
+for i in range(num_ingredients):
+    st.markdown(f"### Ingredient {i+1}")
+    use_saved = st.checkbox(f"Use pre-saved ingredient for item {i+1}?", key=f"use_saved_{i}")
+    
+    if use_saved:
+        selected = st.selectbox(f"Select ingredient {i+1}", pre_saved_ingredients['Ingredient'], key=f"sel_{i}")
+        row = pre_saved_ingredients[pre_saved_ingredients['Ingredient'] == selected].iloc[0]
+        name = selected
+        unit = row['Unit']
+        price_per_unit = row['Price_per_unit']
+    else:
+        name = st.text_input(f"Ingredient name {i+1}", key=f"name_{i}")
+        unit = st.text_input(f"Unit (e.g., gram, kg, ml) for {name}", key=f"unit_{i}")
+        price_per_unit = st.number_input(f"Price per {unit} for {name}", min_value=0.0, key=f"price_{i}")
+    
+    quantity = st.number_input(f"Quantity of {name}", min_value=0.0, key=f"qty_{i}")
+    convert_to_unit = st.text_input(f"Convert {unit} to (leave blank to skip)", key=f"conv_unit_{i}")
+    
+    if convert_to_unit:
+        try:
+            converted_qty = convert_unit(quantity, unit, convert_to_unit)
+            st.write(f"Converted Quantity: {converted_qty:.2f} {convert_to_unit}")
+            unit = convert_to_unit
+            quantity = converted_qty
+        except:
+            st.error("Conversion failed. Please check units.")
 
-        # Calculate and show grand total
-        if "Total" in edited_df.columns:
-            total_cost = edited_df["Total"].sum()
-            st.markdown(f"### 🧾 Grand Total: ₹ {total_cost:,.2f}")
+    cost = quantity * price_per_unit
+    ingredients.append({
+        'Ingredient': name,
+        'Quantity': quantity,
+        'Unit': unit,
+        'Price_per_unit': price_per_unit,
+        'Cost': cost
+    })
 
-        # Prepare file for download
-        output = io.BytesIO()
-        with pd.ExcelWriter(output, engine="xlsxwriter") as writer:
-            edited_df.to_excel(writer, index=False, sheet_name="Updated Recipe")
-            writer.close()
-            processed_data = output.getvalue()
+# Display DataFrame and Total
+df = pd.DataFrame(ingredients)
+df['Cost'] = df['Cost'].round(2)
+total_cost = df['Cost'].sum()
 
-        # Download button
-        st.download_button(
-            label="📥 Download Updated Excel",
-            data=processed_data,
-            file_name="updated_recipe.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        )
+st.subheader("📋 Recipe Summary")
+st.write(f"Dish: **{dish_name}**")
+st.write(f"Serves: **{num_people}** people")
+st.dataframe(df)
+st.write(f"### 🧾 Total Cost: ₹{total_cost:.2f}")
 
-    except Exception as e:
-        st.error(f"❌ Error reading file: {e}")
+# -----------------------------
+# Feature 3: Export to Excel
+# -----------------------------
+output = BytesIO()
+with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
+    df.to_excel(writer, index=False, sheet_name='Recipe')
+    worksheet = writer.sheets['Recipe']
+    worksheet.write(len(df)+2, 0, 'Total Cost')
+    worksheet.write(len(df)+2, 1, total_cost)
 
-else:
-    st.info("📄 Please upload an Excel (.xlsx) file to begin.")
+excel_data = output.getvalue()
+b64 = base64.b64encode(excel_data).decode()
+href = f'<a href="data:application/octet-stream;base64,{b64}" download="recipe_cost.xlsx">📥 Download Excel File</a>'
+st.markdown(href, unsafe_allow_html=True)
