@@ -2,40 +2,56 @@ import streamlit as st
 import pandas as pd
 import io
 
-# Sample data
-data = {
-    "Ingredient": ["Flour", "Sugar", "Butter", "Eggs"],
-    "Quantity": [1000, 500, 250, 10],
-    "Measurement": ["grams (g)", "grams (g)", "grams (g)", "pieces"],
-    "Unit Cost": [1.5, 1.2, 2.5, 0.3],
-    "Total Cost": [1.5, 0.6, 0.625, 3.0]
-}
-df = pd.DataFrame(data)
+# Page configuration
+st.set_page_config(page_title="Recipe Cost Calculator", layout="wide")
+st.title("🍽️ Recipe Cost Calculator (Editable)")
 
-# Create a summary
-summary_df = pd.DataFrame({
-    "Sheet Name": ["Recipe1", "Recipe2", "Recipe3"],
-    "Total Cost": [sum(df["Total Cost"])] * 3
-})
+# File uploader
+uploaded_file = st.file_uploader("📤 Upload your Excel file with recipe ingredients", type=["xlsx"])
 
-# Excel in memory
-output = io.BytesIO()
-with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
-    for sheet in summary_df["Sheet Name"]:
-        df.to_excel(writer, sheet_name=sheet, index=False)
-    summary_df.to_excel(writer, sheet_name="Summary", index=False)
-output.seek(0)
+if uploaded_file is not None:
+    try:
+        # Read uploaded Excel file
+        df = pd.read_excel(uploaded_file)
 
-# Streamlit UI
-st.title("📋 Recipe Cost Calculator")
+        st.success("✅ File uploaded successfully! You can now edit the values below.")
 
-st.subheader("Ingredients")
-st.dataframe(df)
+        # Editable table
+        st.subheader("✏️ Edit your recipe details below:")
+        edited_df = st.data_editor(df, num_rows="dynamic", use_container_width=True)
 
-st.subheader("Download Excel")
-st.download_button(
-    label="📥 Download Excel File",
-    data=output,
-    file_name="Food_Cost_Template.xlsx",
-    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-)
+        # Calculate 'Total' column if the necessary columns exist
+        if "Quantity" in edited_df.columns and "Unit Price" in edited_df.columns:
+            edited_df["Total"] = edited_df["Quantity"] * edited_df["Unit Price"]
+        else:
+            st.warning("⚠️ Please ensure your file includes 'Quantity' and 'Unit Price' columns.")
+
+        # Display the updated table
+        st.subheader("📊 Updated Table:")
+        st.dataframe(edited_df, use_container_width=True)
+
+        # Calculate and show grand total
+        if "Total" in edited_df.columns:
+            total_cost = edited_df["Total"].sum()
+            st.markdown(f"### 🧾 Grand Total: ₹ {total_cost:,.2f}")
+
+        # Prepare file for download
+        output = io.BytesIO()
+        with pd.ExcelWriter(output, engine="xlsxwriter") as writer:
+            edited_df.to_excel(writer, index=False, sheet_name="Updated Recipe")
+            writer.close()
+            processed_data = output.getvalue()
+
+        # Download button
+        st.download_button(
+            label="📥 Download Updated Excel",
+            data=processed_data,
+            file_name="updated_recipe.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        )
+
+    except Exception as e:
+        st.error(f"❌ Error reading file: {e}")
+
+else:
+    st.info("📄 Please upload an Excel (.xlsx) file to begin.")
